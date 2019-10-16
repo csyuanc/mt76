@@ -121,7 +121,7 @@ static void mt76_init_stream_cap(struct mt76_dev *dev,
 				 bool vht)
 {
 	struct ieee80211_sta_ht_cap *ht_cap = &sband->ht_cap;
-	int i, nstream = hweight8(dev->antenna_mask);
+	int i, nstream = hweight8(dev->phy.antenna_mask);
 	struct ieee80211_sta_vht_cap *vht_cap;
 	u16 mcs_map = 0;
 
@@ -326,8 +326,8 @@ int mt76_register_device(struct mt76_dev *dev, bool vht,
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_CQM_RSSI_LIST);
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_AIRTIME_FAIRNESS);
 
-	wiphy->available_antennas_tx = dev->antenna_mask;
-	wiphy->available_antennas_rx = dev->antenna_mask;
+	wiphy->available_antennas_tx = dev->phy.antenna_mask;
+	wiphy->available_antennas_rx = dev->phy.antenna_mask;
 
 	hw->txq_data_size = sizeof(struct mt76_txq);
 	hw->max_tx_fragments = 16;
@@ -932,10 +932,10 @@ EXPORT_SYMBOL_GPL(mt76_sta_state);
 int mt76_get_txpower(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		     int *dbm)
 {
-	struct mt76_dev *dev = hw->priv;
-	int n_chains = hweight8(dev->antenna_mask);
+	struct mt76_phy *phy = hw->priv;
+	int n_chains = hweight8(phy->antenna_mask);
 
-	*dbm = DIV_ROUND_UP(dev->txpower_cur, 2);
+	*dbm = DIV_ROUND_UP(phy->txpower_cur, 2);
 
 	/* convert from per-chain power to combined
 	 * output power

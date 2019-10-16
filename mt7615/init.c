@@ -206,7 +206,7 @@ static void
 mt7615_init_txpower(struct mt7615_dev *dev,
 		    struct ieee80211_supported_band *sband)
 {
-	int i, n_chains = hweight8(dev->mt76.antenna_mask), target_chains;
+	int i, n_chains = hweight8(dev->mphy.antenna_mask), target_chains;
 	u8 *eep = (u8 *)dev->mt76.eeprom.data;
 	enum nl80211_band band = sband->band;
 
@@ -306,7 +306,7 @@ int mt7615_register_device(struct mt7615_dev *dev)
 			IEEE80211_VHT_CAP_MAX_A_MPDU_LENGTH_EXPONENT_MASK |
 			IEEE80211_VHT_CAP_SUPP_CHAN_WIDTH_160_80PLUS80MHZ;
 	dev->chainmask = 0x404;
-	dev->mt76.antenna_mask = 0xf;
+	dev->mphy.antenna_mask = 0xf;
 	dev->dfs_state = -1;
 
 	wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) |

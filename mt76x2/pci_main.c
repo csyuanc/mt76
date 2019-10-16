@@ -125,7 +125,7 @@ static int mt76x2_set_antenna(struct ieee80211_hw *hw, u32 tx_ant,
 	mutex_lock(&dev->mt76.mutex);
 
 	dev->chainmask = (tx_ant == 3) ? 0x202 : 0x101;
-	dev->mt76.antenna_mask = tx_ant;
+	dev->mphy.antenna_mask = tx_ant;
 
 	mt76_set_stream_caps(&dev->mt76, true);
 	mt76x2_phy_set_antenna(dev);
@@ -141,8 +141,8 @@ static int mt76x2_get_antenna(struct ieee80211_hw *hw, u32 *tx_ant,
 	struct mt76x02_dev *dev = hw->priv;
 
 	mutex_lock(&dev->mt76.mutex);
-	*tx_ant = dev->mt76.antenna_mask;
-	*rx_ant = dev->mt76.antenna_mask;
+	*tx_ant = dev->mphy.antenna_mask;
+	*rx_ant = dev->mphy.antenna_mask;
 	mutex_unlock(&dev->mt76.mutex);
 
 	return 0;
