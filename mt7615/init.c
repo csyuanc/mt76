@@ -251,6 +251,7 @@ mt7615_regd_notifier(struct wiphy *wiphy,
 	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
 	struct mt7615_dev *dev = mt7615_hw_dev(hw);
 	struct mt76_phy *mphy = hw->priv;
+	struct mt7615_phy *phy = mphy->priv;
 	struct cfg80211_chan_def *chandef = &mphy->chandef;
 
 	dev->mt76.region = request->dfs_region;
@@ -258,11 +259,7 @@ mt7615_regd_notifier(struct wiphy *wiphy,
 	if (!(chandef->chan->flags & IEEE80211_CHAN_RADAR))
 		return;
 
-	mt7615_dfs_stop_radar_detector(dev);
-	if (request->dfs_region == NL80211_DFS_UNSET)
-		mt7615_mcu_rdd_cmd(dev, RDD_CAC_END, 0, MT_RX_SEL0, 0);
-	else
-		mt7615_dfs_start_radar_detector(dev);
+	mt7615_dfs_init_radar_detector(phy);
 }
 
 int mt7615_register_device(struct mt7615_dev *dev)
@@ -307,7 +304,7 @@ int mt7615_register_device(struct mt7615_dev *dev)
 			IEEE80211_VHT_CAP_SUPP_CHAN_WIDTH_160_80PLUS80MHZ;
 	dev->chainmask = 0x404;
 	dev->mphy.antenna_mask = 0xf;
-	dev->dfs_state = -1;
+	dev->phy.dfs_state = -1;
 
 	wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) |
 #ifdef CONFIG_MAC80211_MESH
