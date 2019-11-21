@@ -8,6 +8,7 @@ obj-$(CONFIG_MT76_USB) += mt76-usb.o
 obj-$(CONFIG_MT76x2_COMMON) += mt76x2/
 obj-$(CONFIG_MT76x0_COMMON) += mt76x0/
 obj-$(CONFIG_MT7615E) += mt7615/
+obj-$(CONFIG_MT7622) += mt7622/
 
 mt76-y := \
 	mmio.o util.o trace.o dma.o mac80211.o debugfs.o eeprom.o \
