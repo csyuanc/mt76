@@ -287,15 +287,6 @@ struct wtbl_tx_ps {
 	u8 rsv[3];
 } __packed;
 
-struct wtbl_hdr_trans {
-	__le16 tag;
-	__le16 len;
-	u8 to_ds;
-	u8 from_ds;
-	u8 disable_rx_trans;
-	u8 rsv;
-} __packed;
-
 enum {
 	MT_BA_TYPE_INVALID,
 	MT_BA_TYPE_ORIGINATOR,
@@ -327,28 +318,6 @@ struct wtbl_ba {
 	u8 rst_ba_sb;
 	u8 band_idx;
 	u8 rsv1[4];
-} __packed;
-
-struct wtbl_rdg {
-	__le16 tag;
-	__le16 len;
-	u8 rdg_ba;
-	u8 r;
-	u8 rsv[2];
-} __packed;
-
-struct wtbl_protection {
-	__le16 tag;
-	__le16 len;
-	u8 rts;
-	u8 rsv[3];
-} __packed;
-
-struct wtbl_clear {
-	__le16 tag;
-	__le16 len;
-	u8 clear;
-	u8 rsv[3];
 } __packed;
 
 struct wtbl_bf {
@@ -392,17 +361,8 @@ struct wtbl_raw {
 				     sizeof(struct wtbl_rx) + \
 				     sizeof(struct wtbl_ht) + \
 				     sizeof(struct wtbl_vht) + \
-				     sizeof(struct wtbl_peer_ps) + \
-				     sizeof(struct wtbl_tx_ps) + \
-				     sizeof(struct wtbl_hdr_trans) + \
 				     sizeof(struct wtbl_ba) + \
-				     sizeof(struct wtbl_rdg) + \
-				     sizeof(struct wtbl_protection) + \
-				     sizeof(struct wtbl_clear) + \
-				     sizeof(struct wtbl_bf) + \
-				     sizeof(struct wtbl_smps) + \
-				     sizeof(struct wtbl_raw) + \
-				     sizeof(struct wtbl_spe))
+				     sizeof(struct wtbl_smps))
 
 enum {
 	WTBL_GENERIC,
@@ -473,12 +433,6 @@ struct sta_rec_ba {
 	__le16 winsize;
 } __packed;
 
-struct sta_rec_tx_proc {
-	__le16 tag;
-	__le16 len;
-	__le32 tx_proc_flag;
-} __packed;
-
 struct sta_rec_apps {
 	__le16	tag;		/* Tag = 11 */
 	__le16	len;
@@ -510,10 +464,8 @@ struct sta_rec_hwamsdu {
 					sizeof(struct sta_rec_ht) + \
 					sizeof(struct sta_rec_vht) + \
 					sizeof(struct sta_rec_ba) + \
-					sizeof(struct sta_rec_tx_proc) + \
 					sizeof(struct sta_rec_apps) + \
-					sizeof(struct sta_rec_wtbl) + \
-					sizeof(struct sta_rec_hwamsdu))
+					sizeof(struct sta_rec_wtbl))
 
 enum {
 	STA_REC_BASIC,

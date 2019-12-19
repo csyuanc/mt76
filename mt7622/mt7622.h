@@ -6,6 +6,7 @@
 
 #include <linux/interrupt.h>
 #include <linux/ktime.h>
+#include <linux/mfd/syscon.h>
 #include "../mt76.h"
 #include "regs.h"
 
@@ -32,6 +33,9 @@
 #define MT7622_EEPROM_SIZE		1024
 #define MT7622_TOKEN_SIZE		4096
 
+#define MT_FRAC_SCALE		12
+#define MT_FRAC(val, div)	(((val) << MT_FRAC_SCALE) / (div))
+
 struct mt7622_vif;
 struct mt7622_sta;
 
@@ -52,6 +56,9 @@ struct mt7622_sta {
 	struct mt76_wcid wcid; /* must be first */
 
 	struct mt7622_vif *vif;
+
+	struct list_head poll_list;
+	u32 airtime_ac[8];
 
 	struct ieee80211_tx_rate rates[4];
 
@@ -74,11 +81,21 @@ struct mt7622_vif {
 };
 
 struct mt7622_dev {
-	struct mt76_dev mt76; /* must be first */
+	union { /* must be first */
+		struct mt76_dev mt76;
+		struct mt76_phy mphy;
+	};
+
 	u32 vif_mask;
 	u32 omac_mask;
 
 	__le32 rx_ampdu_ts;
+	u32 ampdu_ref;
+
+	u16 chainmask;
+
+	struct list_head sta_poll_list;
+	spinlock_t sta_poll_lock;
 
 	int false_cca_ofdm, false_cca_cck;
 	unsigned long last_cca_adj;
@@ -155,12 +172,6 @@ void mt7622_mac_set_scs(struct mt7622_dev *dev, bool enable);
 void mt7622_mac_set_rates(struct mt7622_dev *dev, struct mt7622_sta *sta,
 			  struct ieee80211_tx_rate *probe_rate,
 			  struct ieee80211_tx_rate *rates);
-int mt7622_mcu_wtbl_bmc(struct mt7622_dev *dev, struct ieee80211_vif *vif,
-			bool enable);
-int mt7622_mcu_add_wtbl(struct mt7622_dev *dev, struct ieee80211_vif *vif,
-			struct ieee80211_sta *sta);
-int mt7622_mcu_del_wtbl(struct mt7622_dev *dev, struct ieee80211_sta *sta);
-int mt7622_mcu_del_wtbl_all(struct mt7622_dev *dev);
 int mt7622_mcu_set_sta_rec_bmc(struct mt7622_dev *dev,
 			       struct ieee80211_vif *vif, bool en);
 int mt7622_mcu_set_sta_rec(struct mt7622_dev *dev, struct ieee80211_vif *vif,
@@ -176,18 +187,16 @@ int mt7622_mcu_set_tx_ba(struct mt7622_dev *dev,
 int mt7622_mcu_set_rx_ba(struct mt7622_dev *dev,
 			 struct ieee80211_ampdu_params *params,
 			 bool add);
-int mt7622_mcu_set_ht_cap(struct mt7622_dev *dev, struct ieee80211_vif *vif,
-			  struct ieee80211_sta *sta);
 void mt7622_mcu_rx_event(struct mt7622_dev *dev, struct sk_buff *skb);
 
 static inline void mt7622_irq_enable(struct mt7622_dev *dev, u32 mask)
 {
-	mt76_set_irq_mask(&dev->mt76, MT_INT_MASK_CSR(dev), 0, mask);
+	mt76_set_irq_mask(&dev->mt76, MT_INT_MASK_CSR, 0, mask);
 }
 
 static inline void mt7622_irq_disable(struct mt7622_dev *dev, u32 mask)
 {
-	mt76_set_irq_mask(&dev->mt76, MT_INT_MASK_CSR(dev), mask, 0);
+	mt76_set_irq_mask(&dev->mt76, MT_INT_MASK_CSR, mask, 0);
 }
 
 void mt7622_update_channel(struct mt76_dev *mdev);
@@ -206,6 +215,8 @@ int mt7622_mac_wtbl_set_key(struct mt7622_dev *dev, struct mt76_wcid *wcid,
 			    enum set_key_cmd cmd);
 
 bool mt7622_mac_wtbl_update(struct mt7622_dev *dev, int idx, u32 mask);
+void mt7622_mac_reset_counters(struct mt7622_dev *dev);
+void mt7622_mac_sta_poll(struct mt7622_dev *dev);
 int mt7622_mcu_set_eeprom(struct mt7622_dev *dev);
 int mt7622_mcu_init_mac(struct mt7622_dev *dev);
 int mt7622_mcu_set_rts_thresh(struct mt7622_dev *dev, u32 val);
@@ -225,12 +236,10 @@ void mt7622_tx_complete_skb(struct mt76_dev *mdev, enum mt76_txq_id qid,
 void mt7622_queue_rx_skb(struct mt76_dev *mdev, enum mt76_rxq_id q,
 			 struct sk_buff *skb);
 void mt7622_sta_ps(struct mt76_dev *mdev, struct ieee80211_sta *sta, bool ps);
-int mt7622_sta_add(struct mt76_dev *mdev, struct ieee80211_vif *vif,
-		   struct ieee80211_sta *sta);
-void mt7622_sta_assoc(struct mt76_dev *mdev, struct ieee80211_vif *vif,
-		      struct ieee80211_sta *sta);
-void mt7622_sta_remove(struct mt76_dev *mdev, struct ieee80211_vif *vif,
+int mt7622_mac_sta_add(struct mt76_dev *mdev, struct ieee80211_vif *vif,
 		       struct ieee80211_sta *sta);
+void mt7622_mac_sta_remove(struct mt76_dev *mdev, struct ieee80211_vif *vif,
+			   struct ieee80211_sta *sta);
 void mt7622_mac_work(struct work_struct *work);
 void mt7622_txp_skb_unmap(struct mt76_dev *dev,
 			  struct mt76_txwi_cache *txwi);

@@ -245,12 +245,12 @@ enum tx_phy_bandwidth {
 #define MT_TX_RATE_IDX			GENMASK(5, 0)
 
 #define MT_MSDU_ID_VLD			BIT(15)
-#define MT_MSDU_LAST			BIT(14)
-#define MT_AMSDU_LAST			BIT(15)
+#define MT_MSDU_ML				BIT(14)
+#define MT_MSDU_AL				BIT(15)
 
-#define MT_TXP_MAX_BUF_NUM		4
+#define MT7622_TXP_BUF_NUM		4
 
-struct txp_ptr {
+struct txp_data {
 	__le32 buf0;
 	__le16 len0;
 	__le16 len1;
@@ -258,8 +258,8 @@ struct txp_ptr {
 } __packed;
 
 struct mt7622_txp {
-	__le16 msdu_id[MT_TXP_MAX_BUF_NUM];
-	struct txp_ptr ptr[MT_TXP_MAX_BUF_NUM / 2];
+	__le16 msdu_id[MT7622_TXP_BUF_NUM];
+	struct txp_data data[MT7622_TXP_BUF_NUM / 2];
 } __packed;
 
 struct mt7622_tx_free {

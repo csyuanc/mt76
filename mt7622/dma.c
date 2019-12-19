@@ -2,9 +2,9 @@
 /* Copyright (C) 2019 MediaTek Inc.
  *
  * Author: Ryder Lee <ryder.lee@mediatek.com>
- *         Roy Luo <royluo@google.com>
  *         Lorenzo Bianconi <lorenzo@kernel.org>
  *         Felix Fietkau <nbd@nbd.name>
+ *         Shayne Chen <shayne.chen@mediatek.com>
  */
 
 #include "mt7622.h"
@@ -22,7 +22,7 @@ mt7622_init_tx_queue(struct mt7622_dev *dev, struct mt76_sw_queue *q,
 	if (!hwq)
 		return -ENOMEM;
 
-	err = mt76_queue_alloc(dev, hwq, idx, n_desc, 0, MT_TX_RING_BASE(dev));
+	err = mt76_queue_alloc(dev, hwq, idx, n_desc, 0, MT_TX_RING_BASE);
 	if (err < 0)
 		return err;
 
@@ -82,6 +82,8 @@ static int mt7622_poll_tx(struct napi_struct *napi, int budget)
 	for (i = MT_TXQ_MCU; i >= 0; i--)
 		mt76_queue_tx_cleanup(dev, i, false);
 
+	mt7622_mac_sta_poll(dev);
+
 	tasklet_schedule(&dev->mt76.tx_tasklet);
 
 	return 0;
@@ -90,12 +92,12 @@ static int mt7622_poll_tx(struct napi_struct *napi, int budget)
 static u32 
 mt7622_dma_sched_rr(struct mt7622_dev *dev, u32 offset)
 {
-	u32 val, ori_addr, tmp_addr = MT_DMASHDL(dev, 0);
+	u32 val, ori_addr;
 
-	ori_addr = mt76_rr(dev, MT_DMASHDL_REMAP(dev));
-	mt76_wr(dev, MT_DMASHDL_REMAP(dev), tmp_addr);
-	val = mt76_rr(dev, MT_DMASHDL_OFS(dev, offset));
-	mt76_wr(dev, MT_DMASHDL_REMAP(dev), ori_addr);
+	ori_addr = mt76_rr(dev, MT_DMASHDL_REMAP);
+	mt76_wr(dev, MT_DMASHDL_REMAP, MT_DMASHDL_BASE);
+	val = mt76_rr(dev, MT_DMASHDL_OFS(offset));
+	mt76_wr(dev, MT_DMASHDL_REMAP, ori_addr);
 
 	return val;
 }
@@ -103,41 +105,39 @@ mt7622_dma_sched_rr(struct mt7622_dev *dev, u32 offset)
 static void 
 mt7622_dma_sched_wr(struct mt7622_dev *dev, u32 offset, u32 val)
 {
-	u32 ori_addr, tmp_addr = MT_DMASHDL(dev, 0);
-
-	ori_addr = mt76_rr(dev, MT_DMASHDL_REMAP(dev));
-	mt76_wr(dev, MT_DMASHDL_REMAP(dev), tmp_addr);
-	mt76_wr(dev, MT_DMASHDL_OFS(dev, offset), val);
-	mt76_wr(dev, MT_DMASHDL_REMAP(dev), ori_addr);
+	u32 ori_addr = mt76_rr(dev, MT_DMASHDL_REMAP);
+	mt76_wr(dev, MT_DMASHDL_REMAP, MT_DMASHDL_BASE);
+	mt76_wr(dev, MT_DMASHDL_OFS(offset), val);
+	mt76_wr(dev, MT_DMASHDL_REMAP, ori_addr);
 }
 
 int mt7622_dma_sched_init(struct mt7622_dev *dev)
 {
 	u32 val;
 
-	val = mt7622_dma_sched_rr(dev, MT_HIF_DMASHDL_PKT_MAX_SIZE(dev));
-	val &= ~(PLE_PKT_MAX_SIZE_MASK | PSE_PKT_MAX_SIZE_MASK);
-	val |= PLE_PKT_MAX_SIZE_NUM(0x1);
-	val |= PSE_PKT_MAX_SIZE_NUM(0x8);
-	mt7622_dma_sched_wr(dev, MT_HIF_DMASHDL_PKT_MAX_SIZE(dev), val);
+	val = mt7622_dma_sched_rr(dev, MT_DMASHDL_PKT_MAX_SIZE);
+	val &= ~(PLE_PKT_MAX_SIZE | PSE_PKT_MAX_SIZE);
+	val |= (FIELD_PREP(PLE_PKT_MAX_SIZE, 0x1) |
+			FIELD_PREP(PSE_PKT_MAX_SIZE, 0x8));
+	mt7622_dma_sched_wr(dev, MT_DMASHDL_PKT_MAX_SIZE, val);
 
 	/* Enable refill Control Group 0, 1, 2, 4, 5 */
-	mt7622_dma_sched_wr(dev, MT_HIF_DMASHDL_REFILL_CTRL(dev), 0xffc80000);
-	val = DMASHDL_MIN_QUOTA_NUM(0x10);
-	val |= DMASHDL_MAX_QUOTA_NUM(0x800);
+	mt7622_dma_sched_wr(dev, MT_DMASHDL_REFILL_CTRL, 0xffc80000);
+	val = FIELD_PREP(DMASHDL_MIN_QUOTA, 0x10) |
+		FIELD_PREP(DMASHDL_MAX_QUOTA, 0x800);
 
-	mt7622_dma_sched_wr(dev, MT_HIF_DMASHDL_GROUP0_CTRL(dev), val);
-	mt7622_dma_sched_wr(dev, MT_HIF_DMASHDL_GROUP1_CTRL(dev), val);
-	mt7622_dma_sched_wr(dev, MT_HIF_DMASHDL_GROUP2_CTRL(dev), val);
-	mt7622_dma_sched_wr(dev, MT_HIF_DMASHDL_GROUP4_CTRL(dev), val);
-	mt7622_dma_sched_wr(dev, MT_HIF_DMASHDL_GROUP5_CTRL(dev), val);
+	mt7622_dma_sched_wr(dev, MT_DMASHDL_GROUP0_CTRL, val);
+	mt7622_dma_sched_wr(dev, MT_DMASHDL_GROUP1_CTRL, val);
+	mt7622_dma_sched_wr(dev, MT_DMASHDL_GROUP2_CTRL, val);
+	mt7622_dma_sched_wr(dev, MT_DMASHDL_GROUP4_CTRL, val);
+	mt7622_dma_sched_wr(dev, MT_DMASHDL_GROUP5_CTRL, val);
 
-	mt7622_dma_sched_wr(dev, MT_HIF_DMASHDL_Q_MAP0(dev), 0x42104210);
-	mt7622_dma_sched_wr(dev, MT_HIF_DMASHDL_Q_MAP1(dev), 0x42104210);
-	mt7622_dma_sched_wr(dev, MT_HIF_DMASHDL_Q_MAP2(dev), 0x00000005);
-	mt7622_dma_sched_wr(dev, MT_HIF_DMASHDL_Q_MAP3(dev), 0x0);
-	mt7622_dma_sched_wr(dev, MT_HIF_DMASHDL_SHDL_SET0(dev), 0x6012345f);
-	mt7622_dma_sched_wr(dev, MT_HIF_DMASHDL_SHDL_SET1(dev), 0xedcba987);
+	mt7622_dma_sched_wr(dev, MT_DMASHDL_Q_MAP0, 0x42104210);
+	mt7622_dma_sched_wr(dev, MT_DMASHDL_Q_MAP1, 0x42104210);
+	mt7622_dma_sched_wr(dev, MT_DMASHDL_Q_MAP2, 0x00000005);
+	mt7622_dma_sched_wr(dev, MT_DMASHDL_Q_MAP3, 0x0);
+	mt7622_dma_sched_wr(dev, MT_DMASHDL_SET0, 0x6012345f);
+	mt7622_dma_sched_wr(dev, MT_DMASHDL_SET1, 0xedcba987);
 
 	return 0;
 }
@@ -154,24 +154,24 @@ int mt7622_dma_init(struct mt7622_dev *dev)
 
 	mt76_dma_attach(&dev->mt76);
 
-	mt76_wr(dev, MT_WPDMA_GLO_CFG(dev),
+	mt76_wr(dev, MT_WPDMA_GLO_CFG,
 		MT_WPDMA_GLO_CFG_TX_WRITEBACK_DONE |
 		MT_WPDMA_GLO_CFG_FIFO_LITTLE_ENDIAN |
 		MT_WPDMA_GLO_CFG_OMIT_TX_INFO);
 
-	mt76_rmw_field(dev, MT_WPDMA_GLO_CFG(dev),
+	mt76_rmw_field(dev, MT_WPDMA_GLO_CFG,
 		       MT_WPDMA_GLO_CFG_FW_RING_BP_TX_SCH, 0x1);
 
-	mt76_rmw_field(dev, MT_WPDMA_GLO_CFG(dev),
+	mt76_rmw_field(dev, MT_WPDMA_GLO_CFG,
 		       MT_WPDMA_GLO_CFG_TX_BT_SIZE_BIT21, 0x1);
 
-	mt76_rmw_field(dev, MT_WPDMA_GLO_CFG(dev),
+	mt76_rmw_field(dev, MT_WPDMA_GLO_CFG,
 		       MT_WPDMA_GLO_CFG_DMA_BURST_SIZE, 0x3);
 
-	mt76_rmw_field(dev, MT_WPDMA_GLO_CFG(dev),
+	mt76_rmw_field(dev, MT_WPDMA_GLO_CFG,
 		       MT_WPDMA_GLO_CFG_MULTI_DMA_EN, 0x3);
 
-	mt76_wr(dev, MT_WPDMA_RST_IDX(dev), ~0);
+	mt76_wr(dev, MT_WPDMA_RST_IDX, ~0);
 
 	for (i = 0; i < ARRAY_SIZE(wmm_queue_map); i++) {
 		ret = mt7622_init_tx_queue(dev, &dev->mt76.q_tx[i],
@@ -196,24 +196,20 @@ int mt7622_dma_init(struct mt7622_dev *dev)
 	if (ret)
 		return ret;
 
-	/* bcn quueue init,only use for hw queue idx mapping */
-	ret = mt7622_init_tx_queue(dev, &dev->mt76.q_tx[MT_TXQ_BEACON],
-				   MT_LMAC_BCN0, MT7622_TX_RING_SIZE);
-
 	/* init rx queues */
 	ret = mt76_queue_alloc(dev, &dev->mt76.q_rx[MT_RXQ_MCU], 1,
 			       MT7622_RX_MCU_RING_SIZE, MT_RX_BUF_SIZE,
-			       MT_RX_RING_BASE(dev));
+			       MT_RX_RING_BASE);
 	if (ret)
 		return ret;
 
 	ret = mt76_queue_alloc(dev, &dev->mt76.q_rx[MT_RXQ_MAIN], 0,
 			       MT7622_RX_RING_SIZE, MT_RX_BUF_SIZE,
-			       MT_RX_RING_BASE(dev));
+			       MT_RX_RING_BASE);
 	if (ret)
 		return ret;
 
-	mt76_wr(dev, MT_DELAY_INT_CFG(dev), 0);
+	mt76_wr(dev, MT_DELAY_INT_CFG, 0);
 
 	ret = mt76_init_queues(dev);
 	if (ret < 0)
@@ -223,12 +219,12 @@ int mt7622_dma_init(struct mt7622_dev *dev)
 			  mt7622_poll_tx, NAPI_POLL_WEIGHT);
 	napi_enable(&dev->mt76.tx_napi);
 
-	mt76_poll(dev, MT_WPDMA_GLO_CFG(dev),
+	mt76_poll(dev, MT_WPDMA_GLO_CFG,
 		  MT_WPDMA_GLO_CFG_TX_DMA_BUSY |
 		  MT_WPDMA_GLO_CFG_RX_DMA_BUSY, 0, 1000);
 
 	/* start dma engine */
-	mt76_set(dev, MT_WPDMA_GLO_CFG(dev),
+	mt76_set(dev, MT_WPDMA_GLO_CFG,
 		 MT_WPDMA_GLO_CFG_TX_DMA_EN |
 		 MT_WPDMA_GLO_CFG_RX_DMA_EN);
 
@@ -240,10 +236,10 @@ int mt7622_dma_init(struct mt7622_dev *dev)
 
 void mt7622_dma_cleanup(struct mt7622_dev *dev)
 {
-	mt76_clear(dev, MT_WPDMA_GLO_CFG(dev),
+	mt76_clear(dev, MT_WPDMA_GLO_CFG,
 		   MT_WPDMA_GLO_CFG_TX_DMA_EN |
 		   MT_WPDMA_GLO_CFG_RX_DMA_EN);
-	mt76_set(dev, MT_WPDMA_GLO_CFG(dev), MT_WPDMA_GLO_CFG_SW_RESET);
+	mt76_set(dev, MT_WPDMA_GLO_CFG, MT_WPDMA_GLO_CFG_SW_RESET);
 
 	tasklet_kill(&dev->mt76.tx_tasklet);
 	mt76_dma_cleanup(&dev->mt76);

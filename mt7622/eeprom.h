@@ -24,7 +24,11 @@ enum mt7622_eeprom_field {
 	__MT_EE_MAX =				0x3db
 };
 
-#define MT_EE_NIC_WIFI_DBDC_ENABLE		BIT(3)
+#define MT7622_MAX_NSS		4
+
+#define MT_EE_NIC_CONF_TX_MASK			GENMASK(7, 4)
+#define MT_EE_NIC_CONF_RX_MASK			GENMASK(3, 0)
+
 #define MT_EE_NIC_WIFI_CONF_BAND_SEL		GENMASK(5, 4)
 
 enum mt7622_eeprom_band {

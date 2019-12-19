@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: ISC
 /* Copyright (C) 2019 MediaTek Inc.
  *
+ * Author: Ryder Lee <ryder.lee@mediatek.com>
+ *         Shayne Chen <shayne.chen@mediatek.com>
  */
 
 #include <linux/kernel.h>
@@ -23,10 +25,10 @@ static irqreturn_t mt7622_irq_handler(int irq, void *dev_instance)
 	struct mt7622_dev *dev = dev_instance;
 	u32 intr;
 
-	intr = mt76_rr(dev, MT_INT_SOURCE_CSR(dev));
-	mt76_wr(dev, MT_INT_SOURCE_CSR(dev), intr);
+	intr = mt76_rr(dev, MT_INT_SOURCE_CSR);
+	mt76_wr(dev, MT_INT_SOURCE_CSR, intr);
 
-	if (!test_bit(MT76_STATE_INITIALIZED, &dev->mt76.state))
+	if (!test_bit(MT76_STATE_INITIALIZED, &dev->mphy.state))
 		return IRQ_NONE;
 
 	intr &= dev->mt76.mmio.irqmask;
@@ -60,9 +62,8 @@ static int mt76_wmac_probe(struct platform_device *pdev)
 		.rx_skb = mt7622_queue_rx_skb,
 		.rx_poll_complete = mt7622_rx_poll_complete,
 		.sta_ps = mt7622_sta_ps,
-		.sta_add = mt7622_sta_add,
-		.sta_assoc = mt7622_sta_assoc,
-		.sta_remove = mt7622_sta_remove,
+		.sta_add = mt7622_mac_sta_add,
+		.sta_remove = mt7622_mac_sta_remove,
 		.update_survey = mt7622_update_channel,
 	};
 	struct resource *res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -91,10 +92,9 @@ static int mt76_wmac_probe(struct platform_device *pdev)
 
 	dev = container_of(mdev, struct mt7622_dev, mt76);
 	mt76_mmio_init(mdev, mem_base);
-	dev->regs = mt7622_mmio_regs_base;
 
-	mdev->rev = (mt76_rr(dev, MT_HW_CHIPID(dev)) << 16) |
-		(mt76_rr(dev, MT_HW_REV(dev)) & 0xff);
+	mdev->rev = (mt76_rr(dev, MT_HW_CHIPID) << 16) |
+		(mt76_rr(dev, MT_HW_REV) & 0xff);
 	dev_info(mdev->dev, "ASIC revision: %04x\n", mdev->rev);
 
 	ret = devm_request_irq(mdev->dev, irq, mt7622_irq_handler,

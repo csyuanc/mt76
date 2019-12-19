@@ -4,6 +4,8 @@
  * Author: Roy Luo <royluo@google.com>
  *         Ryder Lee <ryder.lee@mediatek.com>
  *         Felix Fietkau <nbd@nbd.name>
+ *         Sean Wang <sean.wang@mediatek.com> 
+ *         Shayne Chen <shayne.chen@mediatek.com>
  */
 
 #include <linux/etherdevice.h>
@@ -16,8 +18,10 @@ static int mt7622_start(struct ieee80211_hw *hw)
 {
 	struct mt7622_dev *dev = hw->priv;
 
-	dev->mt76.survey_time = ktime_get_boottime();
-	set_bit(MT76_STATE_RUNNING, &dev->mt76.state);
+	mt7622_mac_reset_counters(dev);
+
+	dev->mphy.survey_time = ktime_get_boottime();
+	set_bit(MT76_STATE_RUNNING, &dev->mphy.state);
 	ieee80211_queue_delayed_work(mt76_hw(dev), &dev->mt76.mac_work,
 				     MT7622_WATCHDOG_TIME);
 
@@ -28,7 +32,7 @@ static void mt7622_stop(struct ieee80211_hw *hw)
 {
 	struct mt7622_dev *dev = hw->priv;
 
-	clear_bit(MT76_STATE_RUNNING, &dev->mt76.state);
+	clear_bit(MT76_STATE_RUNNING, &dev->mphy.state);
 	cancel_delayed_work_sync(&dev->mt76.mac_work);
 }
 
@@ -39,6 +43,7 @@ static int get_omac_idx(enum nl80211_iftype type, u32 mask)
 	switch (type) {
 	case NL80211_IFTYPE_AP:
 	case NL80211_IFTYPE_MESH_POINT:
+	case NL80211_IFTYPE_ADHOC:
 		/* ap use hw bssid 0 and ext bssid */
 		if (~mask & BIT(HW_BSSID_0))
 			return HW_BSSID_0;
@@ -137,23 +142,24 @@ static int mt7622_set_channel(struct mt7622_dev *dev)
 	cancel_delayed_work_sync(&dev->mt76.mac_work);
 
 	mutex_lock(&dev->mt76.mutex);
-	set_bit(MT76_RESET, &dev->mt76.state);
+	set_bit(MT76_RESET, &dev->mphy.state);
 
-	mt76_set_channel(&dev->mt76);
+	mt76_set_channel(&dev->mphy);
 
 	ret = mt7622_mcu_set_channel(dev);
 	if (ret)
 		goto out;
 
 	mt7622_mac_cca_stats_reset(dev);
-	dev->mt76.survey_time = ktime_get_boottime();
-	mt76_rr(dev, MT_MIB_SDR16(dev, 0));
+	dev->mphy.survey_time = ktime_get_boottime();
+	/* mt76_rr(dev, MT_MIB_SDR16(dev, 0)); */
+	mt7622_mac_reset_counters(dev);
 
 out:
-	clear_bit(MT76_RESET, &dev->mt76.state);
+	clear_bit(MT76_RESET, &dev->mphy.state);
 	mutex_unlock(&dev->mt76.mutex);
 
-	mt76_txq_schedule_all(&dev->mt76);
+	mt76_txq_schedule_all(&dev->mphy);
 	ieee80211_queue_delayed_work(mt76_hw(dev), &dev->mt76.mac_work,
 				     MT7622_WATCHDOG_TIME);
 	return ret;
@@ -232,7 +238,7 @@ static int mt7622_config(struct ieee80211_hw *hw, u32 changed)
 		else
 			dev->mt76.rxfilter &= ~MT_WF_RFCR_DROP_OTHER_UC;
 
-		mt76_wr(dev, MT_WF_RFCR(dev), dev->mt76.rxfilter);
+		mt76_wr(dev, MT_WF_RFCR, dev->mt76.rxfilter);
 	}
 
 	mutex_unlock(&dev->mt76.mutex);
@@ -255,6 +261,7 @@ mt7622_conf_tx(struct ieee80211_hw *hw, struct ieee80211_vif *vif, u16 queue,
 	u16 wmm_mapping = mvif->wmm_idx * MT7622_MAX_WMM_SETS;
 
 	wmm_mapping += wmm_queue_map[queue];
+	/* TODO: hw wmm_set 1~3 */
 	return mt7622_mcu_set_wmm(dev, wmm_mapping, params);
 }
 
@@ -296,7 +303,7 @@ static void mt7622_configure_filter(struct ieee80211_hw *hw,
 			     MT_WF_RFCR_DROP_NDPA);
 
 	*total_flags = flags;
-	mt76_wr(dev, MT_WF_RFCR(dev), dev->mt76.rxfilter);
+	mt76_wr(dev, MT_WF_RFCR, dev->mt76.rxfilter);
 }
 
 static void mt7622_bss_info_changed(struct ieee80211_hw *hw,
@@ -313,10 +320,12 @@ static void mt7622_bss_info_changed(struct ieee80211_hw *hw,
 
 	if (changed & BSS_CHANGED_BEACON_ENABLED) {
 		mt7622_mcu_set_bss_info(dev, vif, info->enable_beacon);
-		mt7622_mcu_wtbl_bmc(dev, vif, info->enable_beacon);
 		mt7622_mcu_set_sta_rec_bmc(dev, vif, info->enable_beacon);
-		mt7622_mcu_set_bcn(dev, vif, info->enable_beacon);
 	}
+
+	if (changed & (BSS_CHANGED_BEACON |
+				BSS_CHANGED_BEACON_ENABLED))
+		mt7622_mcu_set_bcn(dev, vif, info->enable_beacon);
 
 	mutex_unlock(&dev->mt76.mutex);
 }
@@ -333,8 +342,8 @@ mt7622_channel_switch_beacon(struct ieee80211_hw *hw,
 	mutex_unlock(&dev->mt76.mutex);
 }
 
-int mt7622_sta_add(struct mt76_dev *mdev, struct ieee80211_vif *vif,
-		   struct ieee80211_sta *sta)
+int mt7622_mac_sta_add(struct mt76_dev *mdev, struct ieee80211_vif *vif,
+			struct ieee80211_sta *sta)
 {
 	struct mt7622_dev *dev = container_of(mdev, struct mt7622_dev, mt76);
 	struct mt7622_sta *msta = (struct mt7622_sta *)sta->drv_priv;
@@ -349,23 +358,13 @@ int mt7622_sta_add(struct mt76_dev *mdev, struct ieee80211_vif *vif,
 	msta->wcid.sta = 1;
 	msta->wcid.idx = idx;
 
-	mt7622_mcu_add_wtbl(dev, vif, sta);
 	mt7622_mcu_set_sta_rec(dev, vif, sta, 1);
 
 	return 0;
 }
 
-void mt7622_sta_assoc(struct mt76_dev *mdev, struct ieee80211_vif *vif,
-		      struct ieee80211_sta *sta)
-{
-	struct mt7622_dev *dev = container_of(mdev, struct mt7622_dev, mt76);
-
-	if (sta->ht_cap.ht_supported)
-		mt7622_mcu_set_ht_cap(dev, vif, sta);
-}
-
-void mt7622_sta_remove(struct mt76_dev *mdev, struct ieee80211_vif *vif,
-		       struct ieee80211_sta *sta)
+void mt7622_mac_sta_remove(struct mt76_dev *mdev, struct ieee80211_vif *vif, 
+			struct ieee80211_sta *sta)
 {
 	struct mt7622_dev *dev = container_of(mdev, struct mt7622_dev, mt76);
 
@@ -446,7 +445,7 @@ static void mt7622_tx(struct ieee80211_hw *hw,
 	}
 
 	if (wcid->idx != dev->mt76.global_wcid.idx)
-		mt76_tx(&dev->mt76, control->sta, wcid, skb);
+		mt76_tx(&dev->mphy, control->sta, wcid, skb);
 	else
 		mt7622_altx(&dev->mt76, control->sta, wcid, skb);
 }
@@ -514,6 +513,22 @@ mt7622_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	return 0;
 }
 
+static int
+mt7622_sta_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+	       struct ieee80211_sta *sta)
+{
+    return mt76_sta_state(hw, vif, sta, IEEE80211_STA_NOTEXIST,
+			  IEEE80211_STA_NONE);
+}
+
+static int
+mt7622_sta_remove(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+		  struct ieee80211_sta *sta)
+{
+    return mt76_sta_state(hw, vif, sta, IEEE80211_STA_NONE,
+			  IEEE80211_STA_NOTEXIST);
+}
+
 const struct ieee80211_ops mt7622_ops = {
 	.tx = mt7622_tx,
 	.start = mt7622_start,
@@ -524,7 +539,8 @@ const struct ieee80211_ops mt7622_ops = {
 	.conf_tx = mt7622_conf_tx,
 	.configure_filter = mt7622_configure_filter,
 	.bss_info_changed = mt7622_bss_info_changed,
-	.sta_state = mt76_sta_state,
+	.sta_add = mt7622_sta_add,
+	.sta_remove = mt7622_sta_remove,
 	.set_key = mt7622_set_key,
 	.ampdu_action = mt7622_ampdu_action,
 	.set_rts_threshold = mt7622_set_rts_threshold,
@@ -536,4 +552,5 @@ const struct ieee80211_ops mt7622_ops = {
 	.get_txpower = mt76_get_txpower,
 	.channel_switch_beacon = mt7622_channel_switch_beacon,
 	.get_survey = mt76_get_survey,
+	.get_antenna = mt76_get_antenna,
 };

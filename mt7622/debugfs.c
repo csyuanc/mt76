@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: ISC
 /* Copyright (C) 2019 MediaTek Inc.
  *
- * Author: Ryder Lee <ryder.lee@mediatek.com>
  */
 
 #include "mt7622.h"
