@@ -60,6 +60,52 @@ struct mt7615_mcu_rxd {
 	u8 s2d_index;
 };
 
+struct mt7615_mcu_rdd_report {
+	struct mt7615_mcu_rxd rxd;
+
+	u8 idx;
+	u8 long_detected;
+	u8 constant_prf_detected;
+	u8 staggered_prf_detected;
+	u8 radar_type_idx;
+	u8 periodic_pulse_num;
+	u8 long_pulse_num;
+	u8 hw_pulse_num;
+
+	u8 out_lpn;
+	u8 out_spn;
+	u8 out_crpn;
+	u8 out_crpw;
+	u8 out_crbn;
+	u8 out_stgpn;
+	u8 out_stgpw;
+
+	u8 _rsv[2];
+
+	__le32 out_pri_const;
+	__le32 out_pri_stg[3];
+
+	struct {
+		__le32 start;
+		__le16 pulse_width;
+		__le16 pulse_power;
+	} long_pulse[32];
+
+	struct {
+		__le32 start;
+		__le16 pulse_width;
+		__le16 pulse_power;
+	} periodic_pulse[32];
+
+	struct {
+		__le32 start;
+		__le16 pulse_width;
+		__le16 pulse_power;
+		u8 sc_pass;
+		u8 sw_reset;
+	} hw_pulse[32];
+};
+
 #define MCU_PQ_ID(p, q)		(((p) << 15) | ((q) << 10))
 #define MCU_PKT_ID		0xa0
 
@@ -102,6 +148,7 @@ enum {
 	MCU_EXT_CMD_WTBL_UPDATE = 0x32,
 	MCU_EXT_CMD_SET_RDD_CTRL = 0x3a,
 	MCU_EXT_CMD_PROTECT_CTRL = 0x3e,
+	MCU_EXT_CMD_DBDC_CTRL = 0x45,
 	MCU_EXT_CMD_MAC_INIT_CTRL = 0x46,
 	MCU_EXT_CMD_BCN_OFFLOAD = 0x49,
 	MCU_EXT_CMD_SET_RX_PATH = 0x4e,
@@ -154,6 +201,18 @@ enum {
 enum {
 	DEV_INFO_ACTIVE,
 	DEV_INFO_MAX_NUM
+};
+
+enum {
+	DBDC_TYPE_WMM,
+	DBDC_TYPE_MGMT,
+	DBDC_TYPE_BSS,
+	DBDC_TYPE_MBSS,
+	DBDC_TYPE_REPEATER,
+	DBDC_TYPE_MU,
+	DBDC_TYPE_BF,
+	DBDC_TYPE_PTA,
+	__DBDC_TYPE_MAX,
 };
 
 struct bss_info_omac {

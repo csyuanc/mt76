@@ -113,7 +113,7 @@ mt7603_dma_sched_init(struct mt7603_dev *dev)
 static void
 mt7603_phy_init(struct mt7603_dev *dev)
 {
-	int rx_chains = dev->mt76.antenna_mask;
+	int rx_chains = dev->mphy.antenna_mask;
 	int tx_chains = hweight8(rx_chains) - 1;
 
 	mt76_rmw(dev, MT_WF_RMAC_RMCR,
@@ -284,7 +284,7 @@ mt7603_init_hardware(struct mt7603_dev *dev)
 	mt76_wr(dev, MT_WPDMA_GLO_CFG, 0x52000850);
 	mt7603_mac_dma_start(dev);
 	dev->rxfilter = mt76_rr(dev, MT_WF_RFCR);
-	set_bit(MT76_STATE_INITIALIZED, &dev->mt76.state);
+	set_bit(MT76_STATE_INITIALIZED, &dev->mphy.state);
 
 	for (i = 0; i < MT7603_WTBL_SIZE; i++) {
 		mt76_wr(dev, MT_PSE_RTA, MT_PSE_RTA_BUSY | MT_PSE_RTA_WRITE |
@@ -493,12 +493,12 @@ mt7603_init_txpower(struct mt7603_dev *dev,
 	target_power += max_offset;
 
 	dev->tx_power_limit = target_power;
-	dev->mt76.txpower_cur = target_power;
+	dev->mphy.txpower_cur = target_power;
 
 	target_power = DIV_ROUND_UP(target_power, 2);
 
 	/* add 3 dBm for 2SS devices (combined output) */
-	if (dev->mt76.antenna_mask & BIT(1))
+	if (dev->mphy.antenna_mask & BIT(1))
 		target_power += 3;
 
 	for (i = 0; i < sband->n_channels; i++) {
@@ -535,9 +535,9 @@ int mt7603_register_device(struct mt7603_dev *dev)
 		     (unsigned long)dev);
 
 	/* Check for 7688, which only has 1SS */
-	dev->mt76.antenna_mask = 3;
+	dev->mphy.antenna_mask = 3;
 	if (mt76_rr(dev, MT_EFUSE_BASE + 0x64) & BIT(4))
-		dev->mt76.antenna_mask = 1;
+		dev->mphy.antenna_mask = 1;
 
 	dev->slottime = 9;
 
@@ -556,7 +556,6 @@ int mt7603_register_device(struct mt7603_dev *dev)
 	wiphy->iface_combinations = if_comb;
 	wiphy->n_iface_combinations = ARRAY_SIZE(if_comb);
 
-	ieee80211_hw_set(hw, SUPPORTS_REORDERING_BUFFER);
 	ieee80211_hw_set(hw, TX_STATUS_NO_AMPDU_LEN);
 
 	/* init led callbacks */
@@ -565,16 +564,7 @@ int mt7603_register_device(struct mt7603_dev *dev)
 		dev->mt76.led_cdev.blink_set = mt7603_led_set_blink;
 	}
 
-	wiphy->interface_modes =
-		BIT(NL80211_IFTYPE_STATION) |
-		BIT(NL80211_IFTYPE_AP) |
-#ifdef CONFIG_MAC80211_MESH
-		BIT(NL80211_IFTYPE_MESH_POINT) |
-#endif
-		BIT(NL80211_IFTYPE_ADHOC);
-
 	wiphy->flags |= WIPHY_FLAG_HAS_CHANNEL_SWITCH;
-
 	wiphy->reg_notifier = mt7603_regd_notifier;
 
 	ret = mt76_register_device(&dev->mt76, true, mt7603_rates,
@@ -583,7 +573,7 @@ int mt7603_register_device(struct mt7603_dev *dev)
 		return ret;
 
 	mt7603_init_debugfs(dev);
-	mt7603_init_txpower(dev, &dev->mt76.sband_2g.sband);
+	mt7603_init_txpower(dev, &dev->mphy.sband_2g.sband);
 
 	return 0;
 }

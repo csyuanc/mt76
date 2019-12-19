@@ -98,7 +98,10 @@ enum mt7603_reset_cause {
 };
 
 struct mt7603_dev {
-	struct mt76_dev mt76; /* must be first */
+	union { /* must be first */
+		struct mt76_dev mt76;
+		struct mt76_phy mphy;
+	};
 
 	const struct mt76_bus_ops *bus_ops;
 
@@ -115,6 +118,7 @@ struct mt7603_dev {
 	u32 false_cca_ofdm, false_cca_cck;
 	unsigned long last_cca_adj;
 
+	u32 ampdu_ref;
 	__le32 rx_ampdu_ts;
 	u8 rssi_offset[3];
 

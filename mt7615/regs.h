@@ -6,6 +6,8 @@
 
 #define MT_HW_REV			0x1000
 #define MT_HW_CHIPID			0x1008
+#define MT_TOP_STRAP_STA		0x1010
+#define MT_TOP_3NSS			BIT(24)
 #define MT_TOP_MISC2			0x1134
 #define MT_TOP_MISC2_FW_STATE		GENMASK(2, 0)
 
@@ -79,16 +81,16 @@
 #define MT_WF_PHY_BASE			0x10000
 #define MT_WF_PHY(ofs)			(MT_WF_PHY_BASE + (ofs))
 
-#define MT_WF_PHY_WF2_RFCTRL0		MT_WF_PHY(0x1900)
+#define MT_WF_PHY_WF2_RFCTRL0(n)	MT_WF_PHY(0x1900 + ((n) * 0x400))
 #define MT_WF_PHY_WF2_RFCTRL0_LPBCN_EN	BIT(9)
 
-#define MT_WF_PHY_R0_B0_PHYMUX_5	MT_WF_PHY(0x0614)
+#define MT_WF_PHY_R0_PHYMUX_5(_phy)	MT_WF_PHY(0x0614 + ((_phy) << 9))
 
-#define MT_WF_PHY_R0_B0_PHYCTRL_STS0	MT_WF_PHY(0x020c)
+#define MT_WF_PHY_R0_PHYCTRL_STS0(_phy)	MT_WF_PHY(0x020c + ((_phy) << 9))
 #define MT_WF_PHYCTRL_STAT_PD_OFDM	GENMASK(31, 16)
 #define MT_WF_PHYCTRL_STAT_PD_CCK	GENMASK(15, 0)
 
-#define MT_WF_PHY_R0_B0_PHYCTRL_STS5	MT_WF_PHY(0x0220)
+#define MT_WF_PHY_R0_PHYCTRL_STS5(_phy)	MT_WF_PHY(0x0220 + ((_phy) << 9))
 #define MT_WF_PHYCTRL_STAT_MDRDY_OFDM	GENMASK(31, 16)
 #define MT_WF_PHYCTRL_STAT_MDRDY_CCK	GENMASK(15, 0)
 
@@ -102,6 +104,9 @@
 #define MT_WF_PHY_B1_PD_OFDM(v)		((v) << 16)
 #define MT_WF_PHY_B1_PD_BLK		BIT(25)
 
+#define MT_WF_PHY_RXTD_BASE		MT_WF_PHY(0x2200)
+#define MT_WF_PHY_RXTD(_n)		(MT_WF_PHY_RXTD_BASE + ((_n) << 2))
+
 #define MT_WF_PHY_B0_RXTD_CCK_PD	MT_WF_PHY(0x2310)
 #define MT_WF_PHY_B0_PD_CCK_MASK	GENMASK(8, 1)
 #define MT_WF_PHY_B0_PD_CCK(v)		((v) << 1)
@@ -109,6 +114,9 @@
 #define MT_WF_PHY_B1_RXTD_CCK_PD	MT_WF_PHY(0x2314)
 #define MT_WF_PHY_B1_PD_CCK_MASK	GENMASK(31, 24)
 #define MT_WF_PHY_B1_PD_CCK(v)		((v) << 24)
+
+#define MT_WF_PHY_RXTD2_BASE		MT_WF_PHY(0x2a00)
+#define MT_WF_PHY_RXTD2(_n)		(MT_WF_PHY_RXTD2_BASE + ((_n) << 2))
 
 #define MT_WF_CFG_BASE			0x20200
 #define MT_WF_CFG(ofs)			(MT_WF_CFG_BASE + (ofs))
@@ -118,6 +126,15 @@
 #define MT_CFG_CCR_MAC_D0_1X_GC_EN	BIT(25)
 #define MT_CFG_CCR_MAC_D1_2X_GC_EN	BIT(30)
 #define MT_CFG_CCR_MAC_D0_2X_GC_EN	BIT(31)
+
+#define MT_DBDC_CTRL0			MT_WF_CFG(0x050)
+#define MT_DBDC_CTRL0_OMAC_00_04	GENMASK(4, 0)
+#define MT_DBDC_CTRL0_OMAC_11_1F	GENMASK(19, 5)
+#define MT_DBDC_CTRL0_MGMT		GENMASK(21, 20)
+#define MT_DBDC_CTRL0_WMM		GENMASK(25, 22)
+#define MT_DBDC_CTRL0_DBDC_EN		BIT(31)
+
+#define MT_DBDC_CTRL1			MT_WF_CFG(0x054)
 
 #define MT_WF_AGG_BASE			0x20a00
 #define MT_WF_AGG(ofs)			(MT_WF_AGG_BASE + (ofs))
@@ -151,13 +168,34 @@
 #define MT_AGG_SCR			MT_WF_AGG(0x0fc)
 #define MT_AGG_SCR_NLNAV_MID_PTEC_DIS	BIT(3)
 
+#define MT_WF_ARB_BASE			0x20c00
+#define MT_WF_ARB(ofs)			(MT_WF_ARB_BASE + (ofs))
+
+#define MT_ARB_SCR			MT_WF_ARB(0x080)
+#define MT_ARB_SCR_TX0_DISABLE		BIT(8)
+#define MT_ARB_SCR_RX0_DISABLE		BIT(9)
+#define MT_ARB_SCR_TX1_DISABLE		BIT(10)
+#define MT_ARB_SCR_RX1_DISABLE		BIT(11)
+
 #define MT_WF_TMAC_BASE			0x21000
 #define MT_WF_TMAC(ofs)			(MT_WF_TMAC_BASE + (ofs))
+
+#define MT_TMAC_CDTR			MT_WF_TMAC(0x090)
+#define MT_TMAC_ODTR			MT_WF_TMAC(0x094)
+#define MT_TIMEOUT_VAL_PLCP		GENMASK(15, 0)
+#define MT_TIMEOUT_VAL_CCA		GENMASK(31, 16)
 
 #define MT_TMAC_TRCR0			MT_WF_TMAC(0x09c)
 #define MT_TMAC_TRCR1			MT_WF_TMAC(0x070)
 #define MT_TMAC_TRCR_CCA_SEL		GENMASK(31, 30)
 #define MT_TMAC_TRCR_SEC_CCA_SEL	GENMASK(29, 28)
+
+#define MT_TMAC_ICR0			MT_WF_TMAC(0x0a4)
+#define MT_TMAC_ICR1			MT_WF_TMAC(0x074)
+#define MT_IFS_EIFS			GENMASK(8, 0)
+#define MT_IFS_RIFS			GENMASK(14, 10)
+#define MT_IFS_SIFS			GENMASK(22, 16)
+#define MT_IFS_SLOT			GENMASK(30, 24)
 
 #define MT_TMAC_CTCR0			MT_WF_TMAC(0x0f4)
 #define MT_TMAC_CTCR0_INS_DDLMT_REFTIME	GENMASK(5, 0)
@@ -168,7 +206,7 @@
 #define MT_WF_RMAC_BASE			0x21200
 #define MT_WF_RMAC(ofs)			(MT_WF_RMAC_BASE + (ofs))
 
-#define MT_WF_RFCR			MT_WF_RMAC(0x000)
+#define MT_WF_RFCR(_band)		MT_WF_RMAC((_band) ? 0x100 : 0x000)
 #define MT_WF_RFCR_DROP_STBC_MULTI	BIT(0)
 #define MT_WF_RFCR_DROP_FCSFAIL		BIT(1)
 #define MT_WF_RFCR_DROP_VERSION		BIT(3)
@@ -191,12 +229,14 @@
 #define MT_WF_RFCR_DROP_NDPA		BIT(20)
 #define MT_WF_RFCR_DROP_UNWANTED_CTL	BIT(21)
 
-#define MT_WF_RFCR1			MT_WF_RMAC(0x004)
+#define MT_WF_RFCR1(_band)		MT_WF_RMAC((_band) ? 0x104 : 0x004)
 #define MT_WF_RFCR1_DROP_ACK		BIT(4)
 #define MT_WF_RFCR1_DROP_BF_POLL	BIT(5)
 #define MT_WF_RFCR1_DROP_BA		BIT(6)
 #define MT_WF_RFCR1_DROP_CFEND		BIT(7)
 #define MT_WF_RFCR1_DROP_CFACK		BIT(8)
+
+#define MT_CHFREQ(_band)		MT_WF_RMAC((_band) ? 0x130 : 0x030)
 
 #define MT_WF_RMAC_MIB_TIME0		MT_WF_RMAC(0x03c4)
 #define MT_WF_RMAC_MIB_RXTIME_CLR	BIT(31)
@@ -205,6 +245,7 @@
 #define MT_WF_RMAC_MIB_AIRTIME0		MT_WF_RMAC(0x0380)
 
 #define MT_WF_RMAC_MIB_TIME5		MT_WF_RMAC(0x03d8)
+#define MT_WF_RMAC_MIB_TIME6		MT_WF_RMAC(0x03dc)
 #define MT_MIB_OBSSTIME_MASK		GENMASK(23, 0)
 
 #define MT_WF_DMA_BASE			0x21800
@@ -292,7 +333,8 @@
 #define MT_WF_MIB(ofs)			(MT_WF_MIB_BASE + (ofs))
 
 #define MT_MIB_M0_MISC_CR		MT_WF_MIB(0x00c)
-#define MT_MIB_MB_SDR0(n)		MT_WF_MIB(0x100 + ((n) << 4))
+#define MT_MIB_MB_SDR(_band, n)		MT_WF_MIB(0x100 + ((_band) << 9) + \
+						  ((n) << 4))
 #define MT_MIB_RTS_RETRIES_COUNT_MASK	GENMASK(31, 16)
 #define MT_MIB_RTS_COUNT_MASK		GENMASK(15, 0)
 
