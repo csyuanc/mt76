@@ -118,18 +118,30 @@ enum tx_pkt_type {
 };
 
 enum tx_pkt_queue_idx {
-	MT_LMAC_AC00,
-	MT_LMAC_AC01,
-	MT_LMAC_AC02,
-	MT_LMAC_AC03,
+	MT_LMAC_AC00,	/* BK */
+	MT_LMAC_AC01,	/* BE */
+	MT_LMAC_AC02,	/* VI */
+	MT_LMAC_AC03,	/* VO */
+	MT_LMAC_AC10,
+	MT_LMAC_AC11,
+	MT_LMAC_AC12,
+	MT_LMAC_AC13,
+	MT_LMAC_AC20,
+	MT_LMAC_AC21,
+	MT_LMAC_AC22,
+	MT_LMAC_AC23,
+	MT_LMAC_AC30,
+	MT_LMAC_AC31,
+	MT_LMAC_AC32,
+	MT_LMAC_AC33,
+
 	MT_LMAC_ALTX0 = 0x10,
-	MT_LMAC_BMC0,
-	MT_LMAC_BCN0,
-	MT_LMAC_PSMP0,
-	MT_LMAC_ALTX1,
-	MT_LMAC_BMC1,
-	MT_LMAC_BCN1,
-	MT_LMAC_PSMP1,
+	MT_LMAC_BMC0 = 0x11,
+	MT_LMAC_BCN0 = 0x12,
+
+	MT_LMAC_ALTX1 = 0x14,
+	MT_LMAC_BMC1 = 0x15,
+	MT_LMAC_BCN1 = 0x16,
 };
 
 enum tx_port_idx {
@@ -333,5 +345,33 @@ mt7615_txwi_to_txp(struct mt76_dev *dev, struct mt76_txwi_cache *t)
 
 	return (struct mt7615_txp *)(txwi + MT_TXD_SIZE);
 }
+
+#define MT_MSDU_ID_VLD			BIT(15)
+#define MT_MSDU_ML				BIT(14)
+#define MT_MSDU_AL				BIT(15)
+
+#define MT7622_TXP_BUF_NUM		4
+
+struct txp_data {
+	__le32 buf0;
+	__le16 len0;
+	__le16 len1;
+	__le32 buf1;
+} __packed;
+
+struct mt7622_txp {
+	__le16 msdu_id[MT7622_TXP_BUF_NUM];
+	struct txp_data data[MT7622_TXP_BUF_NUM / 2];
+} __packed;
+
+struct mt7622_tx_free {
+	__le16 rx_byte_cnt;
+	__le16 ctrl;
+	u8 txd_cnt;
+	u8 rsv0;
+	u8 ctrl2;
+	u8 rev1;
+	__le32 token[];
+} __packed;
 
 #endif

@@ -23,6 +23,25 @@ struct mt7615_mcu_txd {
 	u32 reserved[5];
 } __packed __aligned(4);
 
+struct mt7622_mcu_txd {
+	__le32 txd[8];
+
+	__le16 len;
+	__le16 pq_id;
+
+	u8 cid;
+	u8 pkt_type;
+	u8 set_query; /* FW don't care */
+	u8 seq;
+
+	u8 uc_d2b0_rev;
+	u8 ext_cid;
+	u8 s2d_index;
+	u8 ext_cid_ack;
+
+	u32 reserved[5];
+} __packed __aligned(4);
+
 /* event table */
 enum {
 	MCU_EVENT_TARGET_ADDRESS_LEN = 0x01,
@@ -46,6 +65,22 @@ enum {
 };
 
 struct mt7615_mcu_rxd {
+	__le32 rxd[4];
+
+	__le16 len;
+	__le16 pkt_type_id;
+
+	u8 eid;
+	u8 seq;
+	__le16 __rsv;
+
+	u8 ext_eid;
+	u8 __rsv1[2];
+	u8 s2d_index;
+};
+
+
+struct mt7622_mcu_rxd {
 	__le32 rxd[4];
 
 	__le16 len;
@@ -437,6 +472,19 @@ struct wtbl_raw {
 				     sizeof(struct wtbl_pn) + \
 				     sizeof(struct wtbl_spe))
 
+#define MT7622_WTBL_UPDATE_MAX_SIZE (sizeof(struct wtbl_req_hdr) + \
+				     sizeof(struct wtbl_generic) + \
+				     sizeof(struct wtbl_rx) + \
+				     sizeof(struct wtbl_ht) + \
+				     sizeof(struct wtbl_vht) + \
+				     sizeof(struct wtbl_tx_ps) + \
+				     sizeof(struct wtbl_hdr_trans) + \
+				     sizeof(struct wtbl_ba) + \
+				     sizeof(struct wtbl_bf) + \
+				     sizeof(struct wtbl_smps) + \
+				     sizeof(struct wtbl_pn) + \
+				     sizeof(struct wtbl_spe))
+
 enum {
 	WTBL_GENERIC,
 	WTBL_RX,
@@ -510,6 +558,10 @@ struct sta_rec_ba {
 					sizeof(struct sta_rec_ht) + \
 					sizeof(struct sta_rec_vht))
 
+#define MT7622_STA_REC_UPDATE_MAX_SIZE (sizeof(struct sta_rec_basic) + \
+					sizeof(struct sta_rec_ht) + \
+					sizeof(struct sta_rec_vht))
+
 enum {
 	STA_REC_BASIC,
 	STA_REC_RA,
@@ -551,6 +603,13 @@ static inline struct sk_buff *
 mt7615_mcu_msg_alloc(const void *data, int len)
 {
 	return mt76_mcu_msg_alloc(data, sizeof(struct mt7615_mcu_txd),
+				  len, 0);
+}
+
+static inline struct sk_buff *
+mt7622_mcu_msg_alloc(const void *data, int len)
+{
+	return mt76_mcu_msg_alloc(data, sizeof(struct mt7622_mcu_txd),
 				  len, 0);
 }
 

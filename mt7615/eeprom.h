@@ -21,7 +21,8 @@ enum mt7615_eeprom_field {
 	MT_EE_TX2_5G_G0_TARGET_POWER =		0x142,
 	MT_EE_TX3_5G_G0_TARGET_POWER =		0x16a,
 
-	__MT_EE_MAX =				0x3bf
+	MT7615_EE_MAX =				0x3bf,
+	MT7622_EE_MAX =				0x3db,
 };
 
 #define MT_EE_NIC_CONF_TX_MASK			GENMASK(7, 4)
@@ -77,6 +78,27 @@ mt7615_ext_pa_enabled(struct mt7615_dev *dev, enum nl80211_band band)
 		return !(eep[MT_EE_NIC_CONF_1 + 1] & MT_EE_NIC_CONF_TSSI_5G);
 	else
 		return !(eep[MT_EE_NIC_CONF_1 + 1] & MT_EE_NIC_CONF_TSSI_2G);
+}
+
+
+#define MT7622_MAX_NSS		4
+
+static inline enum mt7615_channel_group
+mt7622_get_channel_group(int channel)
+{
+	if (channel >= 184 && channel <= 196)
+		return MT_CH_5G_JAPAN;
+	if (channel <= 48)
+		return MT_CH_5G_UNII_1;
+	if (channel <= 64)
+		return MT_CH_5G_UNII_2A;
+	if (channel <= 114)
+		return MT_CH_5G_UNII_2E_1;
+	if (channel <= 144)
+		return MT_CH_5G_UNII_2E_2;
+	if (channel <= 161)
+		return MT_CH_5G_UNII_2E_3;
+	return MT_CH_5G_UNII_3;
 }
 
 #endif

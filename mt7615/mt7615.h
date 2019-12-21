@@ -6,6 +6,7 @@
 
 #include <linux/interrupt.h>
 #include <linux/ktime.h>
+#include <linux/mfd/syscon.h>
 #include "../mt76.h"
 #include "regs.h"
 
@@ -20,6 +21,7 @@
 #define MT7615_RATE_RETRY		2
 
 #define MT7615_TX_RING_SIZE		1024
+#define MT7615_TX_MGMT_RING_SIZE	128
 #define MT7615_TX_MCU_RING_SIZE		128
 #define MT7615_TX_FWDL_RING_SIZE	128
 
@@ -29,6 +31,9 @@
 #define MT7615_FIRMWARE_CR4		"mediatek/mt7615_cr4.bin"
 #define MT7615_FIRMWARE_N9		"mediatek/mt7615_n9.bin"
 #define MT7615_ROM_PATCH		"mediatek/mt7615_rom_patch.bin"
+
+#define MT7622_FIRMWARE_N9		"mediatek/mt7622_n9.bin"
+#define MT7622_ROM_PATCH		"mediatek/mt7622_rom_patch.bin"
 
 #define MT7615_EEPROM_SIZE		1024
 #define MT7615_TOKEN_SIZE		4096
@@ -51,6 +56,16 @@ enum mt7615_hw_txq_id {
 	MT7615_TXQ_EXT,
 	MT7615_TXQ_MCU,
 	MT7615_TXQ_FWDL,
+};
+
+enum mt7622_hw_txq_id {
+	MT7622_TXQ_BK,
+	MT7622_TXQ_BE,
+	MT7622_TXQ_VI,
+	MT7622_TXQ_FWDL = MT7615_TXQ_FWDL,
+	MT7622_TXQ_VO,
+	MT7622_TXQ_MGMT,
+	MT7622_TXQ_MCU = 15,
 };
 
 struct mt7615_rate_set {
@@ -124,6 +139,8 @@ struct mt7615_dev {
 	u32 omac_mask;
 
 	u16 chainmask;
+
+	struct regmap *infracfg;
 
 	struct work_struct mcu_work;
 
@@ -220,6 +237,7 @@ extern const struct ieee80211_ops mt7615_ops;
 extern struct pci_driver mt7615_pci_driver;
 
 u32 mt7615_reg_map(struct mt7615_dev *dev, u32 addr);
+irqreturn_t mt7615_irq_handler(int irq, void *dev_instance);
 
 int mt7615_register_device(struct mt7615_dev *dev);
 void mt7615_unregister_device(struct mt7615_dev *dev);
@@ -274,6 +292,11 @@ static inline bool is_mt7622(struct mt76_dev *dev)
 	return mt76_chip(dev) == 0x7622;
 }
 
+static inline bool is_mt7615(struct mt76_dev *dev)
+{
+	return mt76_chip(dev) == 0x7615;
+}
+
 static inline void mt7615_irq_enable(struct mt7615_dev *dev, u32 mask)
 {
 	mt76_set_irq_mask(&dev->mt76, MT_INT_MASK_CSR, 0, mask);
@@ -284,6 +307,7 @@ static inline void mt7615_irq_disable(struct mt7615_dev *dev, u32 mask)
 	mt76_set_irq_mask(&dev->mt76, MT_INT_MASK_CSR, mask, 0);
 }
 
+void mt7615_rx_poll_complete(struct mt76_dev *mdev, enum mt76_rxq_id q);
 void mt7615_update_channel(struct mt76_dev *mdev);
 bool mt7615_mac_wtbl_update(struct mt7615_dev *dev, int idx, u32 mask);
 void mt7615_mac_reset_counters(struct mt7615_dev *dev);
@@ -334,5 +358,23 @@ int mt76_dfs_start_rdd(struct mt7615_dev *dev, bool force);
 int mt7615_dfs_init_radar_detector(struct mt7615_phy *phy);
 
 int mt7615_init_debugfs(struct mt7615_dev *dev);
+
+int mt7622_mac_write_txwi(struct mt7615_dev *dev, __le32 *txwi,
+			  struct sk_buff *skb, enum mt76_txq_id qid,
+			  struct mt76_wcid *wcid,
+			  struct ieee80211_sta *sta, int pid,
+			  struct ieee80211_key_conf *key);
+void mt7622_mac_tx_free(struct mt7615_dev *dev, struct sk_buff *skb);
+void mt7622_mac_sta_poll(struct mt7615_dev *dev);
+int mt7622_tx_prepare_skb(struct mt76_dev *mdev, void *txwi_ptr,
+			  enum mt76_txq_id qid, struct mt76_wcid *wcid,
+			  struct ieee80211_sta *sta,
+			  struct mt76_tx_info *tx_info);
+
+void mt7622_tx_complete_skb(struct mt76_dev *mdev, enum mt76_txq_id qid,
+			    struct mt76_queue_entry *e);
+
+void mt7622_txp_skb_unmap(struct mt76_dev *dev,
+			  struct mt76_txwi_cache *txwi);
 
 #endif

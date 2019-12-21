@@ -6,6 +6,7 @@
  */
 
 #include <linux/firmware.h>
+#include <linux/regmap.h>
 #include "mt7615.h"
 #include "mcu.h"
 #include "mac.h"
@@ -29,7 +30,8 @@ struct mt7615_fw_trailer {
 	__le32 len;
 } __packed;
 
-#define MCU_PATCH_ADDRESS		0x80000
+#define MT7615_PATCH_ADDR		0x80000
+#define MT7622_PATCH_ADDR		0x9c000
 
 #define N9_REGION_NUM			2
 #define CR4_REGION_NUM			1
@@ -333,19 +335,32 @@ static int mt7615_mcu_start_patch(struct mt7615_dev *dev)
 				   &req, sizeof(req), true);
 }
 
+static void mt7622_trigger_hif_int(struct mt7615_dev *dev, bool en)
+{
+	if (!is_mt7622(&dev->mt76))
+		return;
+
+	regmap_update_bits(dev->infracfg, MT_INFRACFG_MISC,
+			   MT_INFRACFG_MISC_AP2CONN_WAKE,
+			   !en * MT_INFRACFG_MISC_AP2CONN_WAKE);
+}
+
 static int mt7615_driver_own(struct mt7615_dev *dev)
 {
 	mt76_wr(dev, MT_CFG_LPCR_HOST, MT_CFG_LPCR_HOST_DRV_OWN);
+
+	mt7622_trigger_hif_int(dev, true);
 	if (!mt76_poll_msec(dev, MT_CFG_LPCR_HOST,
-			    MT_CFG_LPCR_HOST_FW_OWN, 0, 500)) {
+			    MT_CFG_LPCR_HOST_FW_OWN, 0, 3000)) {
 		dev_err(dev->mt76.dev, "Timeout for driver own\n");
 		return -EIO;
 	}
+	mt7622_trigger_hif_int(dev, false);
 
 	return 0;
 }
 
-static int mt7615_load_patch(struct mt7615_dev *dev)
+static int mt7615_load_patch(struct mt7615_dev *dev, const char *name, const u32 addr)
 {
 	const struct mt7615_patch_hdr *hdr;
 	const struct firmware *fw = NULL;
@@ -362,7 +377,7 @@ static int mt7615_load_patch(struct mt7615_dev *dev)
 		return -EAGAIN;
 	}
 
-	ret = request_firmware(&fw, MT7615_ROM_PATCH, dev->mt76.dev);
+	ret = request_firmware(&fw, name, dev->mt76.dev);
 	if (ret)
 		goto out;
 
@@ -379,7 +394,7 @@ static int mt7615_load_patch(struct mt7615_dev *dev)
 
 	len = fw->size - sizeof(*hdr);
 
-	ret = mt7615_mcu_init_download(dev, MCU_PATCH_ADDRESS, len,
+	ret = mt7615_mcu_init_download(dev, addr, len,
 				       DL_MODE_NEED_RSP);
 	if (ret) {
 		dev_err(dev->mt76.dev, "Download request failed\n");
@@ -458,13 +473,13 @@ mt7615_mcu_send_ram_firmware(struct mt7615_dev *dev,
 	return 0;
 }
 
-static int mt7615_load_ram(struct mt7615_dev *dev)
+static int mt7615_load_n9(struct mt7615_dev *dev, const char *name)
 {
 	const struct mt7615_fw_trailer *hdr;
 	const struct firmware *fw;
 	int ret;
 
-	ret = request_firmware(&fw, MT7615_FIRMWARE_N9, dev->mt76.dev);
+	ret = request_firmware(&fw, name, dev->mt76.dev);
 	if (ret)
 		return ret;
 
@@ -491,9 +506,22 @@ static int mt7615_load_ram(struct mt7615_dev *dev)
 		goto out;
 	}
 
-	release_firmware(fw);
+	snprintf(dev->mt76.hw->wiphy->fw_version,
+		 sizeof(dev->mt76.hw->wiphy->fw_version),
+		 "%.10s-%.15s", hdr->fw_ver, hdr->build_date);
 
-	ret = request_firmware(&fw, MT7615_FIRMWARE_CR4, dev->mt76.dev);
+out:
+	release_firmware(fw);
+	return ret;
+}
+
+static int mt7615_load_cr4(struct mt7615_dev *dev, const char *name)
+{
+	const struct mt7615_fw_trailer *hdr;
+	const struct firmware *fw;
+	int ret;
+
+	ret = request_firmware(&fw, name, dev->mt76.dev);
 	if (ret)
 		return ret;
 
@@ -519,14 +547,21 @@ static int mt7615_load_ram(struct mt7615_dev *dev)
 		goto out;
 	}
 
-	snprintf(dev->mt76.hw->wiphy->fw_version,
-		 sizeof(dev->mt76.hw->wiphy->fw_version),
-		 "%.10s-%.15s", hdr->fw_ver, hdr->build_date);
-
 out:
 	release_firmware(fw);
 
 	return ret;
+}
+
+static int mt7615_load_ram(struct mt7615_dev *dev)
+{
+	int ret;
+
+	ret = mt7615_load_n9(dev, MT7615_FIRMWARE_N9);
+	if (ret)
+		return ret;
+
+	return mt7615_load_cr4(dev, MT7615_FIRMWARE_CR4);
 }
 
 static int mt7615_load_firmware(struct mt7615_dev *dev)
@@ -541,7 +576,7 @@ static int mt7615_load_firmware(struct mt7615_dev *dev)
 		return -EIO;
 	}
 
-	ret = mt7615_load_patch(dev);
+	ret = mt7615_load_patch(dev, MT7615_ROM_PATCH, MT7615_PATCH_ADDR);
 	if (ret)
 		return ret;
 
@@ -556,9 +591,38 @@ static int mt7615_load_firmware(struct mt7615_dev *dev)
 		return -EIO;
 	}
 
-	mt76_queue_tx_cleanup(dev, MT_TXQ_FWDL, false);
+	return 0;
+}
 
-	dev_dbg(dev->mt76.dev, "Firmware init done\n");
+static int mt7622_load_firmware(struct mt7615_dev *dev)
+{
+	int ret;
+	u32 val;
+
+	mt76_set(dev, MT_WPDMA_GLO_CFG, MT_WPDMA_GLO_CFG_BYPASS_TX_SCH);
+
+	val = mt76_get_field(dev, MT_TOP_OFF_RSV, MT_TOP_OFF_RSV_FW_STATE);
+	if (val != FW_STATE_FW_DOWNLOAD) {
+		dev_err(dev->mt76.dev, "Firmware is not ready for download\n");
+		return -EIO;
+	}
+
+	ret = mt7615_load_patch(dev, MT7622_ROM_PATCH, MT7622_PATCH_ADDR);
+	if (ret)
+		return ret;
+
+	ret = mt7615_load_n9(dev, MT7622_FIRMWARE_N9);
+	if (ret)
+		return ret;
+
+	if (!mt76_poll_msec(dev, MT_TOP_OFF_RSV, MT_TOP_OFF_RSV_FW_STATE,
+			    FIELD_PREP(MT_TOP_OFF_RSV_FW_STATE,
+				       FW_STATE_NORMAL_TRX), 1500)) {
+		dev_err(dev->mt76.dev, "Timeout for initializing firmware\n");
+		return -EIO;
+	}
+
+	mt76_clear(dev, MT_WPDMA_GLO_CFG, MT_WPDMA_GLO_CFG_BYPASS_TX_SCH);
 
 	return 0;
 }
@@ -577,10 +641,15 @@ int mt7615_mcu_init(struct mt7615_dev *dev)
 	if (ret)
 		return ret;
 
-	ret = mt7615_load_firmware(dev);
+	if (is_mt7622(&dev->mt76))
+		ret = mt7622_load_firmware(dev);
+	else
+		ret = mt7615_load_firmware(dev);
 	if (ret)
 		return ret;
 
+	mt76_queue_tx_cleanup(dev, MT_TXQ_FWDL, false);
+	dev_dbg(dev->mt76.dev, "Firmware init done\n");
 	set_bit(MT76_STATE_MCU_RUNNING, &dev->mphy.state);
 
 	return 0;
@@ -601,18 +670,21 @@ int mt7615_mcu_set_eeprom(struct mt7615_dev *dev)
 		u16 len;
 	} __packed req_hdr = {
 		.buffer_mode = 1,
-		.len = __MT_EE_MAX - MT_EE_NIC_CONF_0,
+		.len = MT7615_EE_MAX - MT_EE_NIC_CONF_0,
 	};
-	int ret, len = sizeof(req_hdr) + __MT_EE_MAX - MT_EE_NIC_CONF_0;
+	int ret, len;
 	u8 *req, *eep = (u8 *)dev->mt76.eeprom.data;
 
+	if (is_mt7622(&dev->mt76))
+		req_hdr.len = MT7622_EE_MAX - MT_EE_NIC_CONF_0;
+
+	len = sizeof(req_hdr) + req_hdr.len;
 	req = kzalloc(len, GFP_KERNEL);
 	if (!req)
 		return -ENOMEM;
 
 	memcpy(req, &req_hdr, sizeof(req_hdr));
-	memcpy(req + sizeof(req_hdr), eep + MT_EE_NIC_CONF_0,
-	       __MT_EE_MAX - MT_EE_NIC_CONF_0);
+	memcpy(req + sizeof(req_hdr), eep + MT_EE_NIC_CONF_0, req_hdr.len);
 
 	ret = __mt76_mcu_send_msg(&dev->mt76, MCU_EXT_CMD_EFUSE_BUFFER_MODE,
 				  req, len, true);
@@ -1225,8 +1297,12 @@ int mt7615_mcu_set_bcn(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		info->hw_queue |= MT_TX_HW_QUEUE_EXT_PHY;
 	}
 
-	mt7615_mac_write_txwi(dev, (__le32 *)(req.pkt), skb, wcid, NULL,
-			      0, NULL);
+	if (is_mt7615(&dev->mt76))
+		mt7615_mac_write_txwi(dev, (__le32 *)(req.pkt), skb, wcid, NULL,
+					0, NULL);
+	else
+		mt7622_mac_write_txwi(dev, (__le32 *)(req.pkt), skb, MT_TXQ_BEACON, 
+				wcid, NULL, 0, NULL);
 	memcpy(req.pkt + MT_TXD_SIZE, skb->data, skb->len);
 	req.pkt_len = cpu_to_le16(MT_TXD_SIZE + skb->len);
 	req.tim_ie_pos = cpu_to_le16(MT_TXD_SIZE + offs.tim_offset);
@@ -1265,7 +1341,7 @@ int mt7615_mcu_set_tx_power(struct mt7615_phy *phy)
 	};
 	s8 tx_power;
 
-	len = sizeof(req_hdr) + __MT_EE_MAX - MT_EE_NIC_CONF_0;
+	len = sizeof(req_hdr) + MT7615_EE_MAX - MT_EE_NIC_CONF_0;
 	req = kzalloc(len, GFP_KERNEL);
 	if (!req)
 		return -ENOMEM;
@@ -1273,7 +1349,7 @@ int mt7615_mcu_set_tx_power(struct mt7615_phy *phy)
 	memcpy(req, &req_hdr, sizeof(req_hdr));
 	data = req + sizeof(req_hdr);
 	memcpy(data, eep + MT_EE_NIC_CONF_0,
-	       __MT_EE_MAX - MT_EE_NIC_CONF_0);
+	       MT7615_EE_MAX - MT_EE_NIC_CONF_0);
 
 	tx_power = hw->conf.power_level * 2;
 	switch (n_chains) {

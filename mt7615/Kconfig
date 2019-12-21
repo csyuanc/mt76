@@ -5,3 +5,10 @@ config MT7615E
 	depends on PCI
 	help
 	  This adds support for MT7615-based wireless PCIe devices.
+
+config MT7622_WMAC
+	tristate "MediaTek MT7622 WiFi support"
+	select MT76_CORE
+	depends on MAC80211
+	help
+	  This adds support for MT7622-SoC wireless devices.

@@ -11,6 +11,47 @@
 #include "mac.h"
 #include "eeprom.h"
 
+irqreturn_t mt7615_irq_handler(int irq, void *dev_instance)
+{
+	struct mt7615_dev *dev = dev_instance;
+	u32 intr;
+
+	intr = mt76_rr(dev, MT_INT_SOURCE_CSR);
+	mt76_wr(dev, MT_INT_SOURCE_CSR, intr);
+
+	if (!test_bit(MT76_STATE_INITIALIZED, &dev->mphy.state))
+		return IRQ_NONE;
+
+	intr &= dev->mt76.mmio.irqmask;
+
+	if (intr & MT_INT_TX_DONE_ALL) {
+		mt7615_irq_disable(dev, MT_INT_TX_DONE_ALL);
+		napi_schedule(&dev->mt76.tx_napi);
+	}
+
+	if (intr & MT_INT_RX_DONE(0)) {
+		mt7615_irq_disable(dev, MT_INT_RX_DONE(0));
+		napi_schedule(&dev->mt76.napi[0]);
+	}
+
+	if (intr & MT_INT_RX_DONE(1)) {
+		mt7615_irq_disable(dev, MT_INT_RX_DONE(1));
+		napi_schedule(&dev->mt76.napi[1]);
+	}
+
+	return IRQ_HANDLED;
+}
+
+u32 mt7615_reg_map(struct mt7615_dev *dev, u32 addr)
+{
+	u32 base = addr & MT_MCU_PCIE_REMAP_2_BASE;
+	u32 offset = addr & MT_MCU_PCIE_REMAP_2_OFFSET;
+
+	mt76_wr(dev, MT_MCU_PCIE_REMAP_2, base);
+
+	return MT_PCIE_REMAP_BASE_2 + offset;
+}
+
 static void mt7615_phy_init(struct mt7615_dev *dev)
 {
 	/* disable rf low power beacon mode */
@@ -37,6 +78,9 @@ static void mt7615_mac_init(struct mt7615_dev *dev)
 	val = MT_AGG_ACR_PKT_TIME_EN | MT_AGG_ACR_NO_BA_AR_RULE |
 	      FIELD_PREP(MT_AGG_ACR_CFEND_RATE, 0x49) | /* 24M */
 	      FIELD_PREP(MT_AGG_ACR_BAR_RATE, 0x4b); /* 6M */
+	if (is_mt7622(&dev->mt76))
+		val |= MT_AGG_ACR_LDPC_UR_EN;
+
 	mt76_wr(dev, MT_AGG_ACR0, val);
 	mt76_wr(dev, MT_AGG_ACR1, val);
 
@@ -44,11 +88,12 @@ static void mt7615_mac_init(struct mt7615_dev *dev)
 		       MT_TMAC_CTCR0_INS_DDLMT_REFTIME, 0x3f);
 	mt76_rmw_field(dev, MT_TMAC_CTCR0,
 		       MT_TMAC_CTCR0_INS_DDLMT_DENSITY, 0x3);
+
 	mt76_rmw(dev, MT_TMAC_CTCR0,
-		 MT_TMAC_CTCR0_INS_DDLMT_VHT_SMPDU_EN |
-		 MT_TMAC_CTCR0_INS_DDLMT_EN,
-		 MT_TMAC_CTCR0_INS_DDLMT_VHT_SMPDU_EN |
-		 MT_TMAC_CTCR0_INS_DDLMT_EN);
+		MT_TMAC_CTCR0_INS_DDLMT_VHT_SMPDU_EN |
+		MT_TMAC_CTCR0_INS_DDLMT_EN,
+		MT_TMAC_CTCR0_INS_DDLMT_VHT_SMPDU_EN |
+		MT_TMAC_CTCR0_INS_DDLMT_EN);
 
 	mt7615_mcu_set_rts_thresh(&dev->phy, 0x92b);
 	mt7615_mac_set_scs(dev, true);
@@ -277,6 +322,7 @@ mt7615_regd_notifier(struct wiphy *wiphy,
 static void
 mt7615_init_wiphy(struct ieee80211_hw *hw)
 {
+	struct mt7615_dev *dev = mt7615_hw_dev(hw);
 	struct mt7615_phy *phy = mt7615_hw_phy(hw);
 	struct wiphy *wiphy = hw->wiphy;
 
@@ -295,11 +341,14 @@ mt7615_init_wiphy(struct ieee80211_hw *hw)
 	wiphy->reg_notifier = mt7615_regd_notifier;
 	wiphy->flags |= WIPHY_FLAG_HAS_CHANNEL_SWITCH;
 
-	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_VHT_IBSS);
-
 	ieee80211_hw_set(hw, TX_STATUS_NO_AMPDU_LEN);
 
-	hw->max_tx_fragments = MT_TXP_MAX_BUF_NUM;
+	if (is_mt7615(&dev->mt76)) {
+		wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_VHT_IBSS);
+		hw->max_tx_fragments = MT_TXP_MAX_BUF_NUM;
+	}
+	else
+		hw->max_tx_fragments = 2;
 }
 
 static void
@@ -379,6 +428,7 @@ void mt7615_unregister_ext_phy(struct mt7615_dev *dev)
 int mt7615_register_device(struct mt7615_dev *dev)
 {
 	struct ieee80211_hw *hw = mt76_hw(dev);
+	bool vht = false;
 	int ret;
 
 	dev->phy.dev = dev;
@@ -394,21 +444,28 @@ int mt7615_register_device(struct mt7615_dev *dev)
 
 	mt7615_init_wiphy(hw);
 	dev->mphy.sband_2g.sband.ht_cap.cap |= IEEE80211_HT_CAP_LDPC_CODING;
-	dev->mphy.sband_5g.sband.ht_cap.cap |= IEEE80211_HT_CAP_LDPC_CODING;
-	dev->mphy.sband_5g.sband.vht_cap.cap |=
-			IEEE80211_VHT_CAP_MAX_MPDU_LENGTH_11454 |
-			IEEE80211_VHT_CAP_MAX_A_MPDU_LENGTH_EXPONENT_MASK;
-	mt7615_cap_dbdc_disable(dev);
+
+	if (is_mt7615(&dev->mt76)) {
+		dev->mphy.sband_5g.sband.ht_cap.cap |= IEEE80211_HT_CAP_LDPC_CODING;
+		dev->mphy.sband_5g.sband.vht_cap.cap |=
+				IEEE80211_VHT_CAP_MAX_MPDU_LENGTH_11454 |
+				IEEE80211_VHT_CAP_MAX_A_MPDU_LENGTH_EXPONENT_MASK;
+		mt7615_cap_dbdc_disable(dev);
+		vht = true;
+	}
 	dev->phy.dfs_state = -1;
 
-	ret = mt76_register_device(&dev->mt76, true, mt7615_rates,
+	ret = mt76_register_device(&dev->mt76, vht, mt7615_rates,
 				   ARRAY_SIZE(mt7615_rates));
 	if (ret)
 		return ret;
 
 	ieee80211_queue_work(mt76_hw(dev), &dev->mcu_work);
-	mt7615_init_txpower(dev, &dev->mphy.sband_2g.sband);
-	mt7615_init_txpower(dev, &dev->mphy.sband_5g.sband);
+
+	if (dev->mt76.cap.has_2ghz)
+		mt7615_init_txpower(dev, &dev->mphy.sband_2g.sband);
+	if (dev->mt76.cap.has_5ghz)
+		mt7615_init_txpower(dev, &dev->mphy.sband_5g.sband);
 
 	return mt7615_init_debugfs(dev);
 }

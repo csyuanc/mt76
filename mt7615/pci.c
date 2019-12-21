@@ -17,55 +17,6 @@ static const struct pci_device_id mt7615_pci_device_table[] = {
 	{ },
 };
 
-u32 mt7615_reg_map(struct mt7615_dev *dev, u32 addr)
-{
-	u32 base = addr & MT_MCU_PCIE_REMAP_2_BASE;
-	u32 offset = addr & MT_MCU_PCIE_REMAP_2_OFFSET;
-
-	mt76_wr(dev, MT_MCU_PCIE_REMAP_2, base);
-
-	return MT_PCIE_REMAP_BASE_2 + offset;
-}
-
-static void
-mt7615_rx_poll_complete(struct mt76_dev *mdev, enum mt76_rxq_id q)
-{
-	struct mt7615_dev *dev = container_of(mdev, struct mt7615_dev, mt76);
-
-	mt7615_irq_enable(dev, MT_INT_RX_DONE(q));
-}
-
-static irqreturn_t mt7615_irq_handler(int irq, void *dev_instance)
-{
-	struct mt7615_dev *dev = dev_instance;
-	u32 intr;
-
-	intr = mt76_rr(dev, MT_INT_SOURCE_CSR);
-	mt76_wr(dev, MT_INT_SOURCE_CSR, intr);
-
-	if (!test_bit(MT76_STATE_INITIALIZED, &dev->mphy.state))
-		return IRQ_NONE;
-
-	intr &= dev->mt76.mmio.irqmask;
-
-	if (intr & MT_INT_TX_DONE_ALL) {
-		mt7615_irq_disable(dev, MT_INT_TX_DONE_ALL);
-		napi_schedule(&dev->mt76.tx_napi);
-	}
-
-	if (intr & MT_INT_RX_DONE(0)) {
-		mt7615_irq_disable(dev, MT_INT_RX_DONE(0));
-		napi_schedule(&dev->mt76.napi[0]);
-	}
-
-	if (intr & MT_INT_RX_DONE(1)) {
-		mt7615_irq_disable(dev, MT_INT_RX_DONE(1));
-		napi_schedule(&dev->mt76.napi[1]);
-	}
-
-	return IRQ_HANDLED;
-}
-
 static int mt7615_pci_probe(struct pci_dev *pdev,
 			    const struct pci_device_id *id)
 {
