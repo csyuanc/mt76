@@ -365,7 +365,6 @@ int mt7622_mac_write_txwi(struct mt7615_dev *dev, __le32 *txwi,
 			  struct ieee80211_sta *sta, int pid,
 			  struct ieee80211_key_conf *key);
 void mt7622_mac_tx_free(struct mt7615_dev *dev, struct sk_buff *skb);
-void mt7622_mac_sta_poll(struct mt7615_dev *dev);
 int mt7622_tx_prepare_skb(struct mt76_dev *mdev, void *txwi_ptr,
 			  enum mt76_txq_id qid, struct mt76_wcid *wcid,
 			  struct ieee80211_sta *sta,

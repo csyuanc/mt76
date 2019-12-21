@@ -235,7 +235,7 @@ static int mt7622_poll_tx(struct napi_struct *napi, int budget)
 	for (i = MT_TXQ_MCU; i >= 0; i--)
 		mt76_queue_tx_cleanup(dev, i, false);
 
-	mt7622_mac_sta_poll(dev);
+	mt7615_mac_sta_poll(dev);
 
 	tasklet_schedule(&dev->mt76.tx_tasklet);
 
